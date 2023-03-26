@@ -4,6 +4,18 @@ from dotenv import load_dotenv
 from google.cloud import kms
 
 
+'''
+!!! Ressources on how to use the KMS API !!!
+- Installation and basic access
+    https://cloud.google.com/kms/docs/reference/libraries#client-libraries-install-python
+- Key creation (including key rotation)
+    https://cloud.google.com/kms/docs/create-key
+- Usage of symmetric keys
+    https://cloud.google.com/kms/docs/encrypt-decrypt
+- Usage of asymmetric keys
+    https://cloud.google.com/kms/docs/encrypt-decrypt-rsa    
+'''
+
 def get_key_rings(project_id, location_id):    
     # Create the client.
     print("Setting up client...")
