@@ -1,7 +1,15 @@
 from argparse import ArgumentParser
+from client import Client
 
-parser = ArgumentParser()
-parser.add_argument("-t", "--topic", dest="topic",
-    required=True, help="the topic where we send the data. This decide the type of sensor")
+def main():
+    parser = ArgumentParser()
+    parser.add_argument("-a", "--all", dest="all", default=False, action='store_true', help="Encrypt all files using master key (MK).")
+    parser.add_argument("-e", "--each", dest="each", default=False, action='store_true', help="Encrypt each file using a data encryption key (DEK) protected with master key (MK) and password.")
 
-args = parser.parse_args()
+    args = vars(parser.parse_args())
+    print(args)
+    client = Client(args)
+    
+
+if __name__ == "__main__":
+    main()
