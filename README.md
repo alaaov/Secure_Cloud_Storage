@@ -21,3 +21,14 @@ https://cloud.google.com/sdk/docs/install?hl=en
 #### **5. Make sure you have a `.env` file with the credentials stored locally**
 
 Now you should be able to access the Google Cloud key management service!
+#### **Run client**
+```
+Encrypt all files just with MK
+python app.py -a
+
+Encrypt each file using DEK and MK and password
+python app.py -e
+
+Decrypt each file
+python app.py -d
+```
