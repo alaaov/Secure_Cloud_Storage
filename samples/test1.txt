@@ -1,1 +1,1 @@
-This is a text to be encrypted
+Text to be encrypted

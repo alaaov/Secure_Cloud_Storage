@@ -1,34 +1,73 @@
 from ast import arg
-from asyncore import file_dispatcher
 import os
+import base64
 from cryptography.fernet import Fernet
 import getpass
+from saltManager import derive_key
+from cryptography.exceptions import InvalidKey, InvalidSignature
 
 class Client:
     def __init__(self, args):
-        if "all" in args and args["all"]:
-            # Generate a unique master key
-            self.master_key = Fernet.generate_key()
-            # Save the encrypted master key to a file
-            with open('./samples/master_key.key', 'wb') as file:
-                file.write(self.master_key)
-            self.fernet = Fernet(self.master_key)
-            self.encryptAllFiles()
+        password = bytes(getpass.getpass(prompt='Enter a password to protect the Master Key:'), 'utf-8')
+        self.generateMasterKey(password)
+        if self.master_key:
+            if "encrypt_master_key" in args and args["encrypt_master_key"]:
+                self.fernet = Fernet(self.master_key)
+                self.encryptAllFilesWithMasterKey()
 
-        elif "each" in args and args["each"]:
-            # Ask the user for a password to protect the master key
-            self.password = bytes(getpass.getpass(prompt='Enter a password to protect the Master Key:'), 'utf-8')
-            self.encryptEachFile()
+            elif "encrypt_data_key" in args and args["encrypt_data_key"]:
+                # Ask the user for a password to protect the master key
+                self.encryptEachFileWithDataKey()
 
-        elif "decrypt" in args and args["decrypt"] != '':
-            pwd = getpass.getpass(prompt='Please enter your password:')
-            self.decryptFile(args["decrypt"].split("/")[-1], pwd)
+            elif "decrypt" in args and args["decrypt"] != '':
+                self.decryptFile(args["decrypt"].split("/")[-1])
 
-        else:
-            print("Invalid arguments...")
-            return
+            else:
+                print("Invalid arguments...")
+                return
 
-    def encryptAllFiles(self):
+    def generateMasterKey(self, password):
+        for root, dirs, files in os.walk('./samples/'):
+            if 'master_key.key' not in files:
+                # Generate a unique master key
+                self.master_key = Fernet.generate_key()
+                
+                print("Master key generated")
+                self.derived_key = derive_key(password, True)
+                self.encryptMasterKey()
+
+            else:
+                # Get master key from file
+                with open('./samples/master_key.key', 'rb') as fileMasterKey:
+                    self.master_key = fileMasterKey.read()
+
+                print("Existing Master key")
+                self.derived_key = derive_key(password)
+                self.decryptMasterKey()
+
+        print("The master key is:", self.master_key)
+
+
+    def encryptMasterKey(self):
+        fernet = Fernet(self.derived_key)
+
+        with open('./samples/master_key.key', 'wb') as f:
+            f.write(fernet.encrypt(self.master_key))
+
+
+    def decryptMasterKey(self):
+        try:
+            fernet = Fernet(self.derived_key)
+
+            with open('./samples/master_key.key', 'rb') as f:
+                encrypted_master_key = f.read()
+
+            self.master_key = fernet.decrypt(encrypted_master_key)
+        except:
+            print("Incorrect password!")
+            self.master_key = None
+
+    def encryptAllFilesWithMasterKey(self):
         # Encrypt all files in the current directory and its subdirectories
         for root, dirs, files in os.walk('./samples/'):
             for file in files:
@@ -46,19 +85,13 @@ class Client:
                     f.write(encrypted_content)
 
 
-    def encryptEachFile(self):
+    def encryptEachFileWithDataKey(self):
         # Encrypt all files in the current directory and its subdirectories
         for root, dirs, files in os.walk('./samples/'):
             for file in files:
                 # Ignore the master key and dek files
                 if file == 'master_key.key' or '.key' in file or file.split('.')[0] + '.key' in files:
                     continue
-
-                # Generate a unique master key
-                self.master_key = Fernet.generate_key()
-                # Save the encrypted master key to a file
-                with open('./samples/master_key.key', 'wb') as fileMasterKey:
-                    fileMasterKey.write(self.master_key)
 
                 # Load the file data to be encrypted
                 with open(os.path.join(root, file), 'rb') as fileToEncrypt:
@@ -73,7 +106,7 @@ class Client:
 
                 # Encrypt the DEK with MK and password
                 fernet2 = Fernet(self.master_key)
-                encrypted_key = fernet2.encrypt(dek + bytes("-pwd-", "utf-8") + self.password)
+                encrypted_key = fernet2.encrypt(dek)
 
                 # Save the encrypted file and encrypted DEK to files
                 with open(os.path.join(root, file), 'wb') as fileEncrypted:
@@ -85,26 +118,28 @@ class Client:
                 print(f'File {file} encrypted')
                 
 
-    def decryptFile(self, name_file, pwd):
+    def decryptFile(self, name_file):
+        dataEncryptionKeyExist = False
         for root, dirs, files in os.walk('./samples/'):
             with open(os.path.join(root, name_file), 'rb') as fileToDecrypt:
                 self.file_data = fileToDecrypt.read()
 
-            with open(os.path.join(root, name_file.split(".")[0] + '.key'), 'rb') as keyToDecrypt:
-                self.key_data = keyToDecrypt.read()
+            if name_file.split(".")[0] + '.key' in files:
+                with open(os.path.join(root, name_file.split(".")[0] + '.key'), 'rb') as keyToDecrypt:
+                    self.key_data = keyToDecrypt.read()
+                    dataEncryptionKeyExist = True
 
-        with open('./samples/master_key.key', 'rb') as masterKey:
-            self.master_key_data = masterKey.read()
+        if dataEncryptionKeyExist:
+            fernet = Fernet(self.master_key)
+            key_decrypted = fernet.decrypt(self.key_data)
 
-        
-        fernet = Fernet(self.master_key_data)
-        key_decrypted = fernet.decrypt(self.key_data)
-        key_decrypted_string = key_decrypted.decode('utf-8')
-
-        if pwd == key_decrypted_string.split("-pwd-")[-1]:
-            fer = Fernet(bytes(key_decrypted_string.split("-pwd-")[0], "utf-8"))
+            fer = Fernet(key_decrypted)
             file_decrypted = fer.decrypt(self.file_data)
-            print(file_decrypted)
+
         else:
-            print("Invalid password...")
+            fer = Fernet(self.master_key)
+            file_decrypted = fer.decrypt(self.file_data)
+        
+
+        print(f"File decrypted: {file_decrypted.decode('utf-8')}")
 
