@@ -8,7 +8,7 @@ from cryptography.exceptions import InvalidKey, InvalidSignature
 
 class Client:
     def __init__(self, args):
-        password = bytes(getpass.getpass(prompt='Enter a password to protect the Master Key:'), 'utf-8')
+        password = bytes(getpass.getpass(prompt='Enter your password for Master Key:'), 'utf-8')
         self.generateMasterKey(password)
         if self.master_key:
             if "encrypt_master_key" in args and args["encrypt_master_key"]:
