@@ -10,7 +10,7 @@ def parse_args():
     return parser.parse_args()
 
 def main():
-    subprocess.run([sys.executable, "pyfiledrop.py"])#, "-t", "temperature"])
+    subprocess.run([sys.executable, "pyfiledrop.py", "-a"])
 
 if __name__ == "__main__":
     main()
