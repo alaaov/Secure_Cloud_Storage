@@ -3,3 +3,6 @@ python-dotenv
 cffi==1.15.1
 cryptography==40.0.1
 pycparser==2.21
+bottle
+paste
+werkzeug
