@@ -1,25 +1,27 @@
-from ast import arg
 import os
 import base64
-from cryptography.fernet import Fernet
 import getpass
+import requests
+from ast import arg
 from saltManager import derive_key
+from cryptography.fernet import Fernet
 from cryptography.exceptions import InvalidKey, InvalidSignature
 
 class Client:
     def __init__(self, args):
+        self.storage_url = 'http://localhost:16273'
         password = bytes(getpass.getpass(prompt='Enter your password for Master Key:'), 'utf-8')
         self.generateMasterKey(password)
         if self.master_key:
-            if "encrypt_master_key" in args and args["encrypt_master_key"]:
+            if args.encrypt_master_key:
                 self.fernet = Fernet(self.master_key)
                 self.encryptAllFilesWithMasterKey()
 
-            elif "encrypt_data_key" in args and args["encrypt_data_key"]:
+            elif args.encrypt_data_key:
                 # Ask the user for a password to protect the master key
                 self.encryptEachFileWithDataKey()
 
-            elif "decrypt" in args and args["decrypt"] != '':
+            elif args.decrypt:
                 self.decryptFile(args["decrypt"].split("/")[-1])
 
             else:
@@ -143,3 +145,23 @@ class Client:
 
         print(f"File decrypted: {file_decrypted.decode('utf-8')}")
 
+
+    def upload_file(self, file_path):
+        upload_url = f"{self.storage_url}/upload"
+        with open(file_path, "rb") as file:
+            response = requests.post(upload_url, files={"file": file})
+            if response.ok:
+                print("File uploaded successfully!")
+            else:
+                print("Failed to upload file.")
+
+
+    def download_file(self, dz_uuid, filename):
+        download_url = f"{self.storage_url}/download/{dz_uuid}"
+        response = requests.get(download_url)
+        if response.status_code == 200:
+            with open(filename, "wb") as f:
+                f.write(response.content)
+            print(f"File {dz_uuid}.pdf downloaded successfully.")
+        else:
+            print(f"Error downloading file. Response code: {response.status_code}")
