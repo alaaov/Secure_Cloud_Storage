@@ -6,7 +6,7 @@ import pickle
 import random
 import string
 from OpenSSL import crypto, SSL
-
+import base64
 
 BLOCK_SIZE = 1024 * 1024 # 1MB chunk size
 
@@ -38,7 +38,7 @@ def get_master_key():
             key_file.write(key)
 
     with open("key.key", "rb") as key_file:
-        return key_file.read()
+        return key_file.read().decode()
 
 def encrypt_file(file, master_key):
     with open(file, 'rb') as f:
@@ -49,25 +49,36 @@ def encrypt_file(file, master_key):
     with open(file,'wb') as f:
         f.write(encrypted)
         
+
+def decrypt_file(key, filename):
+    f = Fernet(key)
+    with open(filename, 'rb') as file:
+        encrypted_file = file.read()
+    return f.decrypt(encrypted_file)
+     
+    
+
+
+
 def generate_random_string(length):
     letters = string.ascii_lowercase
     return ''.join(random.choice(letters) for i in range(length))
 
 def encrypt_chunk(file):
 	# Generate a random encryption key and IV
-	key = Fernet.generate_key()
+	key = os.urandom(32)
 	iv = os.urandom(16)
 
 	# Create a list to store the metadata for each encrypted chunk
 	metadata_list = []
 
 	# Open the input file and read it in chunks
-	with open(file, 'rb') as file:
-		print("tzzzz")
+	with open(file, 'rb') as in_file:
+
 		chunk_index = 0
 		while True:
 			# Read a chunk of data from the input file
-			chunk_data = file.read(BLOCK_SIZE)
+			chunk_data = in_file.read(BLOCK_SIZE)
 			
 			# If there is no more data to read, break out of the loop
 			if not chunk_data:
@@ -76,8 +87,7 @@ def encrypt_chunk(file):
 			# Pad the chunk with zeroes if necessary
 			if len(chunk_data) < BLOCK_SIZE:
 				chunk_data += b'\x00' * (BLOCK_SIZE - len(chunk_data))
-                print(chunk_data)
-            
+			
 			# Encrypt the chunk with a randomly generated key and IV
 			cipher = AES.new(key, AES.MODE_CBC, iv)
 			encrypted_chunk = cipher.encrypt(chunk_data)
@@ -103,9 +113,60 @@ def encrypt_chunk(file):
 			# Increment the chunk index
 			chunk_index += 1
 	# Save the metadata list to a file
+	if not os.path.exists("metadata"):
+		os.makedirs("metadata")
 	meta_path = os.path.join("metadata", file)
 	with open(meta_path, 'wb') as metadata_file:
 		pickle.dump(metadata_list, metadata_file)
+                
+def decrypt_chunk(file):
+    ##steeel not working
+    # Load the metadata list from the file
+    with open(file, 'rb') as metadata_file:
+        metadata_list = pickle.load(metadata_file)
+
+    # Create a buffer to store the decrypted chunks
+    decrypted_buffer = bytearray()
+
+    # Decrypt each chunk using its metadata
+    for metadata in metadata_list:
+        # Read the encrypted chunk from the corresponding file
+        chunk_path = os.path.join("chunk", metadata['chunk_name'])
+        with open(chunk_path, 'rb') as in_file:
+            encrypted_chunk = in_file.read()
+
+        # Decrypt the chunk with its key and IV
+        cipher = AES.new(metadata['key'], AES.MODE_CBC, metadata['iv'])
+        decrypted_chunk = cipher.decrypt(encrypted_chunk)
+
+        # Remove any padding added during encryption
+        decrypted_chunk = decrypted_chunk.rstrip(b'\x00')
+
+        # Add the decrypted chunk to the buffer
+        decrypted_buffer += decrypted_chunk
+
+    # Write the decrypted data to a new file
+    decrypted_file = file.replace('.enc', '')
+    with open(decrypted_file, 'wb') as out_file:
+        out_file.write(decrypted_buffer)
+                
+
+def check_file_in_directories(file_name):
+    metadata_dir = "metadata"
+    storage_dir = "storage"
+    
+    # Check if the file exists in the metadata directory
+    metadata_path = os.path.join(metadata_dir, file_name)
+    if os.path.exists(metadata_path):
+        return metadata_dir
+    
+    # Check if the file exists in the storage directory
+    storage_path = os.path.join(storage_dir, file_name)
+    if os.path.exists(storage_path):
+        return storage_dir
+    
+    # If the file doesn't exist in either directory, return None
+    return 'file dosn''t exist'
 
 
 
@@ -117,57 +178,73 @@ app = Flask(__name__)
 
 @app.route("/")
 def index():
-    return """
-<!DOCTYPE html>
-<html>
-<head>
-	<title>Exemple de formulaire pour télécharger plusieurs fichiers et des boutons radio</title>
-	<!-- Inclure les fichiers CSS de Bootstrap -->
-	<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
-</head>
-<body>
-	<div class="container">
-		<h1>Télécharger plusieurs fichiers et sélectionner une option</h1>
-		<form method="POST" action="/upload" enctype="multipart/form-data">
-			<div class="form-group">
-				<label for="file">Fichiers à télécharger :</label>
-				<input type="file" class="form-control-file" id="file" name="file[]" multiple>
+    metadata_dir = "metadata"
+    storage_dir = "storage"
+    metadata_files = os.listdir(metadata_dir)
+    storage_files = os.listdir(storage_dir)
+    html= """
+		<!DOCTYPE html>
+		<html>
+		<head>
+			<title>Exemple de formulaire pour télécharger plusieurs fichiers et des boutons radio</title>
+			<!-- Inclure les fichiers CSS de Bootstrap -->
+			<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+		</head>
+		<body>
+			<div class="container">
+				<h1>Télécharger plusieurs fichiers et sélectionner une option</h1>
+				<form method="POST" action="/upload" enctype="multipart/form-data">
+					<div class="form-group">
+						<label for="file">Fichiers à télécharger :</label>
+						<input type="file" class="form-control-file" id="file" name="file[]" multiple>
+					</div>
+					<div class="form-group">
+						<label>Options :</label>
+						<div class="form-check">
+							<input class="form-check-input" type="radio" name="option" id="option1" value="Master_Key">
+							<label class="form-check-label" for="option1">
+								Customer 
+		Master Key to protect 
+		all the files of the user.
+							</label>
+						</div>
+						<div class="form-check">
+							<input class="form-check-input" type="radio" name="option" id="option2" value="chunks">
+							<label class="form-check-label" for="option2">
+								Divide files into chunk
+							</label>
+						</div>
+						<div class="form-check">
+							<input class="form-check-input" type="radio" name="option" id="option3" value="option3">
+							<label class="form-check-label" for="option3">
+								Implement re-encryption
+		from old Master Key to 
+		current Master Key 
+		(requires Key Rotation).
+							</label>
+						</div>
+					</div>
+					<button type="submit" class="btn btn-primary">UPLOAD</button>
+				</form>
+				
+				<!-- Afficher la liste des fichiers sélectionnés -->
+				<div id="file-list"></div>
+
+				<h1>Liste of files :</h1>
+				<form method='POST' action='/download'><ul>"""
+    for filename in metadata_files:
+        html += f"<li><input type='checkbox' name='selected_files' value='{filename}'>{filename}</li>"
+    for filename in storage_files:
+        html += f"<li><input type='checkbox' name='selected_files' value='{filename}'>{filename}</li>"
+    html += """</ul>
+    <button type='submit' class='btn btn-primary'>Download</button></form>
 			</div>
-			<div class="form-group">
-				<label>Options :</label>
-				<div class="form-check">
-					<input class="form-check-input" type="radio" name="option" id="option1" value="Master_Key">
-					<label class="form-check-label" for="option1">
-						 Customer 
-Master Key to protect 
-all the files of the user.
-					</label>
-				</div>
-				<div class="form-check">
-					<input class="form-check-input" type="radio" name="option" id="option2" value="chunks">
-					<label class="form-check-label" for="option2">
-						Divide files into chunk
-					</label>
-				</div>
-				<div class="form-check">
-					<input class="form-check-input" type="radio" name="option" id="option3" value="option3">
-					<label class="form-check-label" for="option3">
-						Implement re-encryption
-from old Master Key to 
-current Master Key 
-(requires Key Rotation).
-					</label>
-				</div>
-			</div>
-			<button type="submit" class="btn btn-primary">Envoyer</button>
-		</form>
-		
-		<!-- Afficher la liste des fichiers sélectionnés -->
-		<div id="file-list"></div>
-	</div>
-</body>
-</html>
-"""
+		</body>
+		</html>"""
+
+    # Retourner le contenu HTML généré
+    return html
+
 
 @app.route('/upload', methods=["POST"])
 def upload():
@@ -185,7 +262,6 @@ def upload():
         for file in uploaded_files:
             # Save the uploaded file to disk
             file_path = os.path.join("storage", file.filename)
-            print(file_path)
             file.save(file_path)
             # Encrypt the file with the master key
             encrypted_file = encrypt_file(file_path, master_key)
@@ -196,12 +272,27 @@ def upload():
         for file in uploaded_files:
             # Save the uploaded file to disk
             file_path = os.path.join(file.filename)
-            print(file_path)
             file.save(file_path)
             # Encrypt the file with the master key
             encrypted_file = encrypt_chunk(file_path)
         return "Files uploaded successfully!"
-
+    
+@app.route('/download', methods=["POST"])
+def download():
+    master_key=get_master_key()
+    print(master_key)
+    selected_files = request.form.getlist('selected_files')
+    # Faire quelque chose avec les fichiers sélectionnés
+    for file_name in selected_files:
+        if(check_file_in_directories(file_name)=='storage'):
+             file_path = os.path.join("storage", file_name)
+             decrypt_file(master_key,file_path)
+        elif(check_file_in_directories(file_name)=='metadata'):
+             file_path = os.path.join("metadata", file_name)
+             decrypt_chunk(file_path)
+               
+    return "Fichiers sélectionnés: " + ", ".join(selected_files)
+     
 if __name__ == "__main__":
     ssl_creat()
     app.run(ssl_context=('cert.pem', 'key.pem'))
